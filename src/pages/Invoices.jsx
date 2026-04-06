@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Eye, Pencil, Plus, Printer } from 'lucide-react';
 import CreateInvoiceModal from '../modal/CreateInvoiceModal';
 import { supabase } from '../services/supabaseClient';
 import { generateNextInvoiceNumber } from '../utils/invoiceNumber';
@@ -221,6 +221,12 @@ function Invoices() {
                         </th>
                       ),
                     )}
+                    <th
+                      scope="col"
+                      className="px-6 py-3.5 text-right text-xs font-semibold text-slate-500"
+                    >
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -238,11 +244,38 @@ function Invoices() {
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900">
                         {formatCurrency(invoice.total_amount)}
                       </td>
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <div className="flex justify-end gap-3">
+                          <button
+                            type="button"
+                            aria-label={`View invoice ${invoice.invoice_number}`}
+                            className="text-slate-400 transition-colors hover:text-blue-600"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Edit invoice ${invoice.invoice_number}`}
+                            onClick={() => console.log(invoice.id)}
+                            className="text-slate-400 transition-colors hover:text-amber-600"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Print invoice ${invoice.invoice_number}`}
+                            onClick={() => window.print()}
+                            className="text-slate-400 transition-colors hover:text-emerald-600"
+                          >
+                            <Printer className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                   {invoicesWithClientNames.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-6 py-10 text-center text-sm text-slate-500">
+                      <td colSpan={5} className="px-6 py-10 text-center text-sm text-slate-500">
                         No invoices created yet.
                       </td>
                     </tr>
