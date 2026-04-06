@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Eye, Pencil, Plus, Printer } from 'lucide-react';
 import CreateInvoiceModal from '../modal/CreateInvoiceModal';
+import ViewInvoiceModal from '../modal/ViewInvoiceModal';
 import { supabase } from '../services/supabaseClient';
+import { printInvoiceDocument } from '../utils/invoicePrintTemplate';
 import { generateNextInvoiceNumber } from '../utils/invoiceNumber';
 
 function Invoices() {
@@ -9,10 +11,16 @@ function Invoices() {
   const [clients, setClients] = useState([]);
   const [seriesOptions, setSeriesOptions] = useState([]);
   const [serviceOptions, setServiceOptions] = useState([]);
+  const [invoiceItemsById, setInvoiceItemsById] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState(null);
+  const [viewInvoice, setViewInvoice] = useState(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isViewLoading, setIsViewLoading] = useState(false);
+  const [viewError, setViewError] = useState('');
 
   useEffect(() => {
     const fetchInvoiceData = async () => {
@@ -27,7 +35,10 @@ function Invoices() {
           { data: servicesData, error: servicesError },
         ] = await Promise.all([
           supabase.from('invoices').select('*').order('issue_date', { ascending: false }),
-          supabase.from('client_table').select('id, brand_name').order('brand_name', { ascending: true }),
+          supabase
+            .from('client_table')
+            .select('id, name, brand_name, phone, location')
+            .order('brand_name', { ascending: true }),
           supabase.from('invoice_series').select('*').order('created_at', { ascending: false }),
           supabase.from('services').select('*').order('name', { ascending: true }),
         ]);
@@ -66,97 +77,254 @@ function Invoices() {
   const clientsById = useMemo(
     () =>
       clients.reduce((lookup, client) => {
-        lookup[client.id] = client.brand_name;
+        lookup[client.id] = client;
         return lookup;
       }, {}),
     [clients],
+  );
+
+  const servicesById = useMemo(
+    () =>
+      serviceOptions.reduce((lookup, service) => {
+        lookup[service.id] = service;
+        return lookup;
+      }, {}),
+    [serviceOptions],
   );
 
   const invoicesWithClientNames = useMemo(
     () =>
       invoices.map((invoice) => ({
         ...invoice,
-        clientName: clientsById[invoice.client_id] || 'Unknown client',
+        client: clientsById[invoice.client_id] || null,
+        clientName: clientsById[invoice.client_id]?.brand_name || 'Unknown client',
       })),
     [invoices, clientsById],
   );
+
+  const viewItems = viewInvoice ? invoiceItemsById[viewInvoice.id] || [] : [];
+
+  const fetchInvoiceItems = async (invoiceId, forceRefresh = false) => {
+    if (!forceRefresh && invoiceItemsById[invoiceId]) {
+      return invoiceItemsById[invoiceId];
+    }
+
+    const { data, error: itemsError } = await supabase
+      .from('invoice_items')
+      .select('*')
+      .eq('invoice_id', invoiceId)
+      .order('id', { ascending: true });
+
+    if (itemsError) {
+      throw itemsError;
+    }
+
+    const items = data || [];
+    setInvoiceItemsById((currentItems) => ({
+      ...currentItems,
+      [invoiceId]: items,
+    }));
+
+    return items;
+  };
+
+  const openCreateModal = () => {
+    setEditingInvoice(null);
+    setError('');
+    setIsModalOpen(true);
+  };
+
+  const closeInvoiceModal = () => {
+    setIsModalOpen(false);
+    setEditingInvoice(null);
+    setError('');
+  };
+
+  const closeViewModal = () => {
+    setIsViewModalOpen(false);
+    setViewInvoice(null);
+    setIsViewLoading(false);
+    setViewError('');
+  };
+
+  const handleViewInvoice = async (invoice) => {
+    setViewInvoice(invoice);
+    setIsViewModalOpen(true);
+    setIsViewLoading(true);
+    setViewError('');
+
+    try {
+      await fetchInvoiceItems(invoice.id);
+    } catch (itemsError) {
+      console.error('Error loading invoice items:', itemsError);
+      setViewError(getSupabaseErrorMessage(itemsError, 'Unable to load invoice items.'));
+    } finally {
+      setIsViewLoading(false);
+    }
+  };
+
+  const handleEditInvoice = async (invoice) => {
+    setError('');
+    setIsSaving(false);
+
+    try {
+      const items = await fetchInvoiceItems(invoice.id);
+      setEditingInvoice({
+        ...invoice,
+        items,
+      });
+      setIsModalOpen(true);
+    } catch (itemsError) {
+      console.error('Error loading invoice for edit:', itemsError);
+      setError(getSupabaseErrorMessage(itemsError, 'Unable to load invoice items for editing.'));
+    }
+  };
+
+  const handlePrintInvoice = async (invoice) => {
+    try {
+      const items = await fetchInvoiceItems(invoice.id);
+      printInvoiceDocument({
+        invoice,
+        client: invoice.client,
+        items,
+      });
+    } catch (itemsError) {
+      console.error('Error printing invoice:', itemsError);
+      setError(getSupabaseErrorMessage(itemsError, 'Unable to prepare the invoice for printing.'));
+    }
+  };
+
+  const buildInvoiceItemsPayload = (items, invoiceId) =>
+    items.map((item) => {
+      const selectedService = servicesById[item.service_id];
+      const quantity = Number(item.quantity || 0);
+      const unitPrice = Number(item.unit_price || 0);
+
+      return {
+        invoice_id: invoiceId,
+        service_name: selectedService?.name || item.service_name || '',
+        description: normalizeOptionalText(item.description),
+        quantity,
+        unit_price: unitPrice,
+        total: quantity * unitPrice,
+      };
+    });
 
   const handleSaveInvoice = async (invoiceData) => {
     setIsSaving(true);
     setError('');
 
     try {
-      const { series, nextNumber, invoiceNumber } = await generateNextInvoiceNumber(
-        invoiceData.series_id,
-      );
-
-      const invoicePayload = {
-        client_id: invoiceData.client_id,
-        series_id: invoiceData.series_id,
-        invoice_number: invoiceNumber,
-        total_amount: invoiceData.total_amount,
-        issue_date: invoiceData.issue_date,
-        notes: normalizeOptionalText(invoiceData.notes),
-      };
-
-      const { data: createdInvoice, error: invoiceInsertError } = await supabase
-        .from('invoices')
-        .insert([invoicePayload])
-        .select()
-        .single();
-
-      if (invoiceInsertError) {
-        throw invoiceInsertError;
-      }
-
-      const selectedServicesById = serviceOptions.reduce((lookup, service) => {
-        lookup[service.id] = service;
-        return lookup;
-      }, {});
-
-      const invoiceItemsPayload = invoiceData.items.map((item) => {
-        const selectedService = selectedServicesById[item.service_id];
-        const quantity = Number(item.quantity || 0);
-        const unitPrice = Number(item.unit_price || 0);
-
-        return {
-          invoice_id: createdInvoice.id,
-          service_name: selectedService?.name || '',
-          description: normalizeOptionalText(item.description),
-          quantity,
-          unit_price: unitPrice,
-          total: quantity * unitPrice,
+      if (editingInvoice) {
+        const invoicePayload = {
+          client_id: invoiceData.client_id,
+          series_id: invoiceData.series_id,
+          total_amount: invoiceData.total_amount,
+          issue_date: invoiceData.issue_date,
+          notes: normalizeOptionalText(invoiceData.notes),
         };
-      });
 
-      if (invoiceItemsPayload.length > 0) {
-        const { error: itemsInsertError } = await supabase
-          .from('invoice_items')
-          .insert(invoiceItemsPayload);
+        const { data: updatedInvoice, error: invoiceUpdateError } = await supabase
+          .from('invoices')
+          .update(invoicePayload)
+          .eq('id', editingInvoice.id)
+          .select()
+          .single();
 
-        if (itemsInsertError) {
-          throw itemsInsertError;
+        if (invoiceUpdateError) {
+          throw invoiceUpdateError;
         }
+
+        const { error: deleteItemsError } = await supabase
+          .from('invoice_items')
+          .delete()
+          .eq('invoice_id', editingInvoice.id);
+
+        if (deleteItemsError) {
+          throw deleteItemsError;
+        }
+
+        const invoiceItemsPayload = buildInvoiceItemsPayload(invoiceData.items, editingInvoice.id);
+
+        if (invoiceItemsPayload.length > 0) {
+          const { error: insertItemsError } = await supabase
+            .from('invoice_items')
+            .insert(invoiceItemsPayload);
+
+          if (insertItemsError) {
+            throw insertItemsError;
+          }
+        }
+
+        setInvoices((currentInvoices) =>
+          currentInvoices.map((invoice) =>
+            invoice.id === editingInvoice.id ? updatedInvoice : invoice,
+          ),
+        );
+        setInvoiceItemsById((currentItems) => ({
+          ...currentItems,
+          [editingInvoice.id]: invoiceItemsPayload,
+        }));
+      } else {
+        const { series, nextNumber, invoiceNumber } = await generateNextInvoiceNumber(
+          invoiceData.series_id,
+        );
+
+        const invoicePayload = {
+          client_id: invoiceData.client_id,
+          series_id: invoiceData.series_id,
+          invoice_number: invoiceNumber,
+          total_amount: invoiceData.total_amount,
+          issue_date: invoiceData.issue_date,
+          notes: normalizeOptionalText(invoiceData.notes),
+        };
+
+        const { data: createdInvoice, error: invoiceInsertError } = await supabase
+          .from('invoices')
+          .insert([invoicePayload])
+          .select()
+          .single();
+
+        if (invoiceInsertError) {
+          throw invoiceInsertError;
+        }
+
+        const invoiceItemsPayload = buildInvoiceItemsPayload(invoiceData.items, createdInvoice.id);
+
+        if (invoiceItemsPayload.length > 0) {
+          const { error: itemsInsertError } = await supabase
+            .from('invoice_items')
+            .insert(invoiceItemsPayload);
+
+          if (itemsInsertError) {
+            throw itemsInsertError;
+          }
+        }
+
+        const { error: seriesUpdateError } = await supabase
+          .from('invoice_series')
+          .update({ current_number: nextNumber })
+          .eq('id', series.id);
+
+        if (seriesUpdateError) {
+          throw seriesUpdateError;
+        }
+
+        setInvoices((currentInvoices) => [createdInvoice, ...currentInvoices]);
+        setInvoiceItemsById((currentItems) => ({
+          ...currentItems,
+          [createdInvoice.id]: invoiceItemsPayload,
+        }));
+        setSeriesOptions((currentSeriesOptions) =>
+          currentSeriesOptions.map((seriesOption) =>
+            seriesOption.id === series.id
+              ? { ...seriesOption, current_number: nextNumber }
+              : seriesOption,
+          ),
+        );
       }
 
-      const { error: seriesUpdateError } = await supabase
-        .from('invoice_series')
-        .update({ current_number: nextNumber })
-        .eq('id', series.id);
-
-      if (seriesUpdateError) {
-        throw seriesUpdateError;
-      }
-
-      setInvoices((currentInvoices) => [createdInvoice, ...currentInvoices]);
-      setSeriesOptions((currentSeriesOptions) =>
-        currentSeriesOptions.map((seriesOption) =>
-          seriesOption.id === series.id
-            ? { ...seriesOption, current_number: nextNumber }
-            : seriesOption,
-        ),
-      );
-      setIsModalOpen(false);
+      closeInvoiceModal();
     } catch (saveError) {
       console.error('Error saving invoice:', saveError);
       const message = getSupabaseErrorMessage(saveError, 'Unable to save invoice right now.');
@@ -180,7 +348,7 @@ function Invoices() {
           <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
             <button
               type="button"
-              onClick={() => setIsModalOpen(true)}
+              onClick={openCreateModal}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
             >
               <Plus className="-ml-0.5 h-4 w-4" />
@@ -210,17 +378,15 @@ function Invoices() {
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50/50">
                   <tr>
-                    {['Invoice Number', 'Issue Date', 'Client Name', 'Amount'].map(
-                      (heading) => (
-                        <th
-                          key={heading}
-                          scope="col"
-                          className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500"
-                        >
-                          {heading}
-                        </th>
-                      ),
-                    )}
+                    {['Invoice Number', 'Issue Date', 'Client Name', 'Amount'].map((heading) => (
+                      <th
+                        key={heading}
+                        scope="col"
+                        className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500"
+                      >
+                        {heading}
+                      </th>
+                    ))}
                     <th
                       scope="col"
                       className="px-6 py-3.5 text-right text-xs font-semibold text-slate-500"
@@ -248,24 +414,25 @@ function Invoices() {
                         <div className="flex justify-end gap-3">
                           <button
                             type="button"
+                            onClick={() => handleViewInvoice(invoice)}
                             aria-label={`View invoice ${invoice.invoice_number}`}
-                            className="text-slate-400 transition-colors hover:text-blue-600"
+                            className="rounded-md text-slate-400 transition-colors hover:text-blue-600"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
                           <button
                             type="button"
+                            onClick={() => handleEditInvoice(invoice)}
                             aria-label={`Edit invoice ${invoice.invoice_number}`}
-                            onClick={() => console.log(invoice.id)}
-                            className="text-slate-400 transition-colors hover:text-amber-600"
+                            className="rounded-md text-slate-400 transition-colors hover:text-amber-600"
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
                           <button
                             type="button"
+                            onClick={() => handlePrintInvoice(invoice)}
                             aria-label={`Print invoice ${invoice.invoice_number}`}
-                            onClick={() => window.print()}
-                            className="text-slate-400 transition-colors hover:text-emerald-600"
+                            className="rounded-md text-slate-400 transition-colors hover:text-emerald-600"
                           >
                             <Printer className="h-4 w-4" />
                           </button>
@@ -289,13 +456,24 @@ function Invoices() {
 
       <CreateInvoiceModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={closeInvoiceModal}
         onSave={handleSaveInvoice}
         clients={clients}
         seriesOptions={seriesOptions}
         serviceOptions={serviceOptions}
         isSaving={isSaving}
         error={error}
+        mode={editingInvoice ? 'edit' : 'create'}
+        initialData={editingInvoice}
+      />
+
+      <ViewInvoiceModal
+        isOpen={isViewModalOpen}
+        onClose={closeViewModal}
+        invoice={viewInvoice}
+        items={viewItems}
+        isLoading={isViewLoading}
+        error={viewError}
       />
     </>
   );

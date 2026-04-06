@@ -9,9 +9,11 @@ function CreateInvoiceModal({
   serviceOptions,
   isSaving = false,
   error = '',
+  mode = 'create',
+  initialData = null,
 }) {
   const [formData, setFormData] = useState(() =>
-    createInitialFormData(clients, seriesOptions, serviceOptions),
+    createInitialFormData(clients, seriesOptions, serviceOptions, initialData),
   );
   const [submitError, setSubmitError] = useState('');
 
@@ -38,10 +40,10 @@ function CreateInvoiceModal({
 
   useEffect(() => {
     if (isOpen) {
-      setFormData(createInitialFormData(clients, seriesOptions, serviceOptions));
+      setFormData(createInitialFormData(clients, seriesOptions, serviceOptions, initialData));
       setSubmitError('');
     }
-  }, [isOpen, clients, seriesOptions, serviceOptions]);
+  }, [isOpen, clients, seriesOptions, serviceOptions, initialData]);
 
   useEffect(() => {
     setSubmitError(error);
@@ -57,6 +59,10 @@ function CreateInvoiceModal({
   );
 
   const invoiceNumberPreview = useMemo(() => {
+    if (mode === 'edit' && initialData?.invoice_number) {
+      return initialData.invoice_number;
+    }
+
     const selectedSeries = seriesOptions.find((series) => series.id === formData.series_id);
 
     if (!selectedSeries?.prefix) {
@@ -65,7 +71,7 @@ function CreateInvoiceModal({
 
     const nextNumber = Number(selectedSeries.current_number || 0) + 1;
     return `${selectedSeries.prefix}/${String(nextNumber).padStart(3, '0')}`;
-  }, [formData.series_id, seriesOptions]);
+  }, [formData.series_id, initialData?.invoice_number, mode, seriesOptions]);
 
   const handleFieldChange = (event) => {
     const { name, value } = event.target;
@@ -119,6 +125,12 @@ function CreateInvoiceModal({
     return null;
   }
 
+  const isEditMode = mode === 'edit';
+  const modalTitle = isEditMode ? 'Edit Invoice' : 'Create Invoice';
+  const modalDescription = isEditMode
+    ? 'Update invoice details, service line items, and billing metadata.'
+    : 'Build an invoice, add service line items, and issue a unique invoice number.';
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 px-4 py-4 backdrop-blur-sm sm:px-6"
@@ -139,11 +151,9 @@ function CreateInvoiceModal({
         <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
           <div>
             <h2 id="create-invoice-title" className="text-xl font-semibold text-slate-900">
-              Create Invoice
+              {modalTitle}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Build an invoice, add service line items, and issue a unique invoice number.
-            </p>
+            <p className="mt-1 text-sm text-slate-500">{modalDescription}</p>
           </div>
 
           <button
@@ -223,7 +233,7 @@ function CreateInvoiceModal({
 
                   return (
                     <div
-                      key={index}
+                      key={item.local_id || index}
                       className="grid gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 md:grid-cols-[1.3fr_1.4fr_0.8fr_0.8fr_0.8fr_auto]"
                     >
                       <SelectField
@@ -325,7 +335,7 @@ function CreateInvoiceModal({
               disabled={isSaving || !formData.client_id || !formData.series_id}
               className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSaving ? 'Saving...' : 'Create Invoice'}
+              {isSaving ? 'Saving...' : isEditMode ? 'Update Invoice' : 'Create Invoice'}
             </button>
           </div>
         </form>
@@ -409,8 +419,22 @@ function ReadOnlyField({ label, value }) {
   );
 }
 
-function createInitialFormData(clients = [], seriesOptions = [], serviceOptions = []) {
+function createInitialFormData(clients = [], seriesOptions = [], serviceOptions = [], initialData) {
   const today = getTodayString();
+
+  if (initialData) {
+    return {
+      id: initialData.id,
+      client_id: initialData.client_id || clients[0]?.id || '',
+      series_id: initialData.series_id || seriesOptions[0]?.id || '',
+      issue_date: initialData.issue_date || today,
+      notes: initialData.notes || '',
+      items:
+        initialData.items?.length > 0
+          ? initialData.items.map((item, index) => normalizeInvoiceItem(item, index, serviceOptions))
+          : [createEmptyItem(serviceOptions)],
+    };
+  }
 
   return {
     client_id: clients[0]?.id || '',
@@ -423,10 +447,24 @@ function createInitialFormData(clients = [], seriesOptions = [], serviceOptions 
 
 function createEmptyItem(serviceOptions = []) {
   return {
+    local_id: `new-${Math.random().toString(36).slice(2, 10)}`,
     service_id: serviceOptions[0]?.id || '',
     description: '',
     quantity: '1',
     unit_price: '0',
+  };
+}
+
+function normalizeInvoiceItem(item, index, serviceOptions = []) {
+  const matchedService = serviceOptions.find((service) => service.name === item.service_name);
+
+  return {
+    id: item.id,
+    local_id: item.id || `existing-${index}`,
+    service_id: item.service_id || matchedService?.id || serviceOptions[0]?.id || '',
+    description: item.description || '',
+    quantity: String(item.quantity ?? '1'),
+    unit_price: String(item.unit_price ?? '0'),
   };
 }
 
