@@ -1,16 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-function EventModal({
+function AddSeriesModal({
   isOpen,
   onClose,
   onSave,
-  clients,
-  defaultDate,
-  initialEvent,
   isSaving = false,
   error = '',
+  initialSeries,
+  currentFinancialYear,
 }) {
-  const [formData, setFormData] = useState(() => createInitialFormData(defaultDate, clients));
+  const [formData, setFormData] = useState(() => createInitialFormData(initialSeries));
   const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
@@ -36,18 +35,19 @@ function EventModal({
 
   useEffect(() => {
     if (isOpen) {
-      setFormData(
-        initialEvent
-          ? createFormDataFromEvent(initialEvent)
-          : createInitialFormData(defaultDate, clients),
-      );
+      setFormData(createInitialFormData(initialSeries));
       setSubmitError('');
     }
-  }, [isOpen, defaultDate, clients, initialEvent]);
+  }, [isOpen, initialSeries]);
 
   useEffect(() => {
     setSubmitError(error);
   }, [error]);
+
+  const previewPrefix = useMemo(
+    () => buildPrefix(formData.code, currentFinancialYear),
+    [formData.code, currentFinancialYear],
+  );
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -63,8 +63,10 @@ function EventModal({
 
     try {
       await onSave(formData);
-    } catch {
-      setSubmitError('Unable to save event right now.');
+    } catch (saveError) {
+      setSubmitError(
+        saveError?.message || saveError?.details || 'Unable to save invoice series right now.',
+      );
     }
   };
 
@@ -87,17 +89,15 @@ function EventModal({
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="add-event-title"
+        aria-labelledby="series-modal-title"
       >
         <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
           <div>
-            <h2 id="add-event-title" className="text-xl font-semibold text-slate-900">
-              {initialEvent ? 'Edit Event' : 'Add Event'}
+            <h2 id="series-modal-title" className="text-xl font-semibold text-slate-900">
+              {initialSeries ? 'Edit Series' : 'Add Series'}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              {initialEvent
-                ? 'Update the schedule details and keep the calendar in sync.'
-                : 'Schedule a shoot, meeting, or internal task for the selected day.'}
+              Configure invoice numbering rules for the current financial year.
             </p>
           </div>
 
@@ -125,62 +125,38 @@ function EventModal({
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
-                label="Event Title"
-                name="title"
-                value={formData.title}
+                label="Series Name"
+                name="name"
+                value={formData.name}
                 onChange={handleChange}
-                placeholder="Enter event title"
-                required
-              />
-              <SelectField
-                label="Select Client"
-                name="client_id"
-                value={formData.client_id}
-                onChange={handleChange}
-                options={clients}
-              />
-              <FormField
-                label="Date"
-                name="date"
-                type="date"
-                value={formData.date}
-                onChange={handleChange}
+                placeholder="Enter series name"
                 required
               />
               <FormField
-                label="Time"
-                name="time"
-                type="time"
-                value={formData.time}
+                label="Code"
+                name="code"
+                value={formData.code}
                 onChange={handleChange}
+                placeholder="INV"
                 required
               />
-              <SelectField
-                label="Event Type"
-                name="type"
-                value={formData.type}
+              <ReadOnlyField label="Financial Year" value={currentFinancialYear} />
+              <FormField
+                label="Current Number"
+                name="currentNumber"
+                type="number"
+                min="0"
+                value={formData.currentNumber}
                 onChange={handleChange}
-                options={[
-                  { id: 'Shoot', brand_name: 'Shoot' },
-                  { id: 'Meeting', brand_name: 'Meeting' },
-                  { id: 'Other', brand_name: 'Other' },
-                ]}
+                placeholder="0"
+                required
               />
-              <div className="sm:col-span-2">
-                <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="notes">
-                  Notes
-                </label>
-                <textarea
-                  id="notes"
-                  name="notes"
-                  rows="4"
-                  value={formData.notes}
-                  onChange={handleChange}
-                  placeholder="Add context for the team"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-100"
-                />
-              </div>
+              <ReadOnlyField label="Prefix" value={previewPrefix} />
             </div>
+
+            <p className="mt-3 text-xs text-slate-400">
+              Financial year is generated automatically and series are reset when the financial year changes.
+            </p>
 
             {submitError ? (
               <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
@@ -200,10 +176,10 @@ function EventModal({
             </button>
             <button
               type="submit"
-              disabled={isSaving || !formData.client_id}
+              disabled={isSaving}
               className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSaving ? 'Saving...' : initialEvent ? 'Update Event' : 'Save Event'}
+              {isSaving ? 'Saving...' : initialSeries ? 'Update Series' : 'Save Series'}
             </button>
           </div>
         </form>
@@ -220,6 +196,7 @@ function FormField({
   placeholder,
   required = false,
   type = 'text',
+  min,
 }) {
   return (
     <div>
@@ -230,6 +207,7 @@ function FormField({
         id={name}
         name={name}
         type={type}
+        min={min}
         value={value}
         onChange={onChange}
         placeholder={placeholder}
@@ -240,52 +218,41 @@ function FormField({
   );
 }
 
-function SelectField({ label, name, value, onChange, options }) {
+function ReadOnlyField({ label, value }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor={name}>
-        {label}
-      </label>
-      <select
-        id={name}
-        name={name}
-        value={value}
-        onChange={onChange}
-        className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-100"
-      >
-        {options.length === 0 ? (
-          <option value="">No clients available</option>
-        ) : null}
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.brand_name}
-          </option>
-        ))}
-      </select>
+      <label className="mb-2 block text-sm font-medium text-slate-700">{label}</label>
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-900">
+        {value}
+      </div>
     </div>
   );
 }
 
-function createInitialFormData(defaultDate, clients = []) {
+function createInitialFormData(initialSeries) {
+  if (!initialSeries) {
+    return {
+      name: '',
+      code: '',
+      currentNumber: '0',
+    };
+  }
+
   return {
-    title: '',
-    client_id: clients[0]?.id || '',
-    date: defaultDate,
-    time: '10:00',
-    type: 'Shoot',
-    notes: '',
+    name: initialSeries.name || '',
+    code: initialSeries.code || '',
+    currentNumber: String(initialSeries.current_number ?? 0),
   };
 }
 
-function createFormDataFromEvent(event) {
-  return {
-    title: event.title,
-    client_id: event.client_id,
-    date: event.date,
-    time: event.time,
-    type: event.type,
-    notes: event.notes || '',
-  };
+function buildPrefix(code, financialYear) {
+  const normalizedCode = String(code || '').trim().toUpperCase();
+
+  if (!normalizedCode || !financialYear) {
+    return '';
+  }
+
+  return `${normalizedCode}/${financialYear}`;
 }
 
-export default EventModal;
+export default AddSeriesModal;

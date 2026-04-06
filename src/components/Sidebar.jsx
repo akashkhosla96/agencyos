@@ -4,7 +4,10 @@ const navigationItems = [
   { label: 'Dashboard', to: '/', end: true },
   { label: 'Clients', to: '/clients' },
   { label: 'Calendar', to: '/calendar' },
+  { label: 'Invoices', to: '/invoices' },
 ];
+
+const settingsItem = { label: 'Settings', to: '/settings' };
 
 function Sidebar() {
   return (
@@ -21,24 +24,33 @@ function Sidebar() {
       <nav className="flex-1 px-3 py-5">
         <div className="space-y-2">
           {navigationItems.map(({ label, to, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `flex items-center rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`
-              }
-            >
-              {label}
-            </NavLink>
+            <SidebarLink key={to} label={label} to={to} end={end} />
           ))}
         </div>
       </nav>
+
+      <div className="mt-auto border-t border-slate-200 px-3 py-5">
+        <SidebarLink label={settingsItem.label} to={settingsItem.to} />
+      </div>
     </aside>
+  );
+}
+
+function SidebarLink({ label, to, end = false }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `flex items-center rounded-2xl px-4 py-3 text-sm font-medium transition ${
+          isActive
+            ? 'bg-blue-600 text-white shadow-lg shadow-blue-100'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+        }`
+      }
+    >
+      {label}
+    </NavLink>
   );
 }
 

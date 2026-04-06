@@ -1,0 +1,307 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import CreateInvoiceModal from '../modal/CreateInvoiceModal';
+import { supabase } from '../services/supabaseClient';
+import { generateNextInvoiceNumber } from '../utils/invoiceNumber';
+
+function Invoices() {
+  const [invoices, setInvoices] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [seriesOptions, setSeriesOptions] = useState([]);
+  const [serviceOptions, setServiceOptions] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchInvoiceData = async () => {
+      setIsLoading(true);
+      setError('');
+
+      try {
+        const [
+          { data: invoicesData, error: invoicesError },
+          { data: clientsData, error: clientsError },
+          { data: seriesData, error: seriesError },
+          { data: servicesData, error: servicesError },
+        ] = await Promise.all([
+          supabase.from('invoices').select('*').order('issue_date', { ascending: false }),
+          supabase.from('client_table').select('id, brand_name').order('brand_name', { ascending: true }),
+          supabase.from('invoice_series').select('*').order('created_at', { ascending: false }),
+          supabase.from('services').select('*').order('name', { ascending: true }),
+        ]);
+
+        if (invoicesError) {
+          throw invoicesError;
+        }
+
+        if (clientsError) {
+          throw clientsError;
+        }
+
+        if (seriesError) {
+          throw seriesError;
+        }
+
+        if (servicesError) {
+          throw servicesError;
+        }
+
+        setInvoices(invoicesData || []);
+        setClients(clientsData || []);
+        setSeriesOptions(seriesData || []);
+        setServiceOptions(servicesData || []);
+      } catch (fetchError) {
+        console.error('Error fetching invoice data:', fetchError);
+        setError(getSupabaseErrorMessage(fetchError, 'Unable to load invoices right now.'));
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchInvoiceData();
+  }, []);
+
+  const clientsById = useMemo(
+    () =>
+      clients.reduce((lookup, client) => {
+        lookup[client.id] = client.brand_name;
+        return lookup;
+      }, {}),
+    [clients],
+  );
+
+  const invoicesWithClientNames = useMemo(
+    () =>
+      invoices.map((invoice) => ({
+        ...invoice,
+        clientName: clientsById[invoice.client_id] || 'Unknown client',
+      })),
+    [invoices, clientsById],
+  );
+
+  const handleSaveInvoice = async (invoiceData) => {
+    setIsSaving(true);
+    setError('');
+
+    try {
+      const { series, nextNumber, invoiceNumber } = await generateNextInvoiceNumber(
+        invoiceData.series_id,
+      );
+
+      const invoicePayload = {
+        client_id: invoiceData.client_id,
+        series_id: invoiceData.series_id,
+        invoice_number: invoiceNumber,
+        total_amount: invoiceData.total_amount,
+        issue_date: invoiceData.issue_date,
+        notes: normalizeOptionalText(invoiceData.notes),
+      };
+
+      const { data: createdInvoice, error: invoiceInsertError } = await supabase
+        .from('invoices')
+        .insert([invoicePayload])
+        .select()
+        .single();
+
+      if (invoiceInsertError) {
+        throw invoiceInsertError;
+      }
+
+      const selectedServicesById = serviceOptions.reduce((lookup, service) => {
+        lookup[service.id] = service;
+        return lookup;
+      }, {});
+
+      const invoiceItemsPayload = invoiceData.items.map((item) => {
+        const selectedService = selectedServicesById[item.service_id];
+        const quantity = Number(item.quantity || 0);
+        const unitPrice = Number(item.unit_price || 0);
+
+        return {
+          invoice_id: createdInvoice.id,
+          service_name: selectedService?.name || '',
+          description: normalizeOptionalText(item.description),
+          quantity,
+          unit_price: unitPrice,
+          total: quantity * unitPrice,
+        };
+      });
+
+      if (invoiceItemsPayload.length > 0) {
+        const { error: itemsInsertError } = await supabase
+          .from('invoice_items')
+          .insert(invoiceItemsPayload);
+
+        if (itemsInsertError) {
+          throw itemsInsertError;
+        }
+      }
+
+      const { error: seriesUpdateError } = await supabase
+        .from('invoice_series')
+        .update({ current_number: nextNumber })
+        .eq('id', series.id);
+
+      if (seriesUpdateError) {
+        throw seriesUpdateError;
+      }
+
+      setInvoices((currentInvoices) => [createdInvoice, ...currentInvoices]);
+      setSeriesOptions((currentSeriesOptions) =>
+        currentSeriesOptions.map((seriesOption) =>
+          seriesOption.id === series.id
+            ? { ...seriesOption, current_number: nextNumber }
+            : seriesOption,
+        ),
+      );
+      setIsModalOpen(false);
+    } catch (saveError) {
+      console.error('Error saving invoice:', saveError);
+      const message = getSupabaseErrorMessage(saveError, 'Unable to save invoice right now.');
+      setError(message);
+      throw saveError;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="space-y-8">
+        <div className="sm:flex sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Invoices</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Create, issue, and track invoices from your configured billing series.
+            </p>
+          </div>
+          <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            >
+              <Plus className="-ml-0.5 h-4 w-4" />
+              Create Invoice
+            </button>
+          </div>
+        </div>
+
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-5">
+            <h2 className="text-base font-semibold text-slate-900">Invoice Register</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {invoices.length} invoice records across all clients
+            </p>
+          </div>
+
+          {error ? (
+            <div className="border-b border-slate-200 bg-rose-50 px-6 py-3 text-sm text-rose-600">
+              {error}
+            </div>
+          ) : null}
+
+          {isLoading ? (
+            <div className="px-6 py-10 text-sm text-slate-500">Loading invoices...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50/50">
+                  <tr>
+                    {['Invoice Number', 'Issue Date', 'Client Name', 'Amount'].map(
+                      (heading) => (
+                        <th
+                          key={heading}
+                          scope="col"
+                          className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500"
+                        >
+                          {heading}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {invoicesWithClientNames.map((invoice) => (
+                    <tr key={invoice.id} className="transition-colors hover:bg-slate-50/80">
+                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900">
+                        {invoice.invoice_number}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+                        {formatDate(invoice.issue_date)}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+                        {invoice.clientName}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900">
+                        {formatCurrency(invoice.total_amount)}
+                      </td>
+                    </tr>
+                  ))}
+                  {invoicesWithClientNames.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-10 text-center text-sm text-slate-500">
+                        No invoices created yet.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <CreateInvoiceModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSave={handleSaveInvoice}
+        clients={clients}
+        seriesOptions={seriesOptions}
+        serviceOptions={serviceOptions}
+        isSaving={isSaving}
+        error={error}
+      />
+    </>
+  );
+}
+
+function normalizeOptionalText(value) {
+  const normalizedValue = String(value ?? '').trim();
+  return normalizedValue === '' ? null : normalizedValue;
+}
+
+function formatCurrency(value) {
+  return `Rs. ${new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0))}`;
+}
+
+function formatDate(dateString) {
+  if (!dateString) {
+    return '-';
+  }
+
+  return new Date(`${dateString}T00:00:00`).toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function getSupabaseErrorMessage(error, fallbackMessage) {
+  if (error?.message) {
+    return error.message;
+  }
+
+  if (error?.details) {
+    return error.details;
+  }
+
+  return fallbackMessage;
+}
+
+export default Invoices;
