@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import AddClientModal from '../modal/AddClientModal';
 import { supabase } from '../services/supabaseClient';
@@ -6,6 +6,7 @@ import { supabase } from '../services/supabaseClient';
 function Clients() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [clients, setClients] = useState([]);
+  const [invoices, setInvoices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -16,16 +17,22 @@ function Clients() {
       setError('');
 
       try {
-        const { data, error: fetchError } = await supabase
-          .from('client_table')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const [{ data: clientsData, error: clientsError }, { data: invoicesData, error: invoicesError }] =
+          await Promise.all([
+            supabase.from('client_table').select('*').order('created_at', { ascending: false }),
+            supabase.from('invoices').select('client_id, total_amount'),
+          ]);
 
-        if (fetchError) {
-          throw fetchError;
+        if (clientsError) {
+          throw clientsError;
         }
 
-        setClients(data || []);
+        if (invoicesError) {
+          throw invoicesError;
+        }
+
+        setClients(clientsData || []);
+        setInvoices(invoicesData || []);
       } catch (fetchError) {
         console.error('Error fetching clients:', fetchError);
         setError('Unable to load clients right now.');
@@ -36,6 +43,20 @@ function Clients() {
 
     fetchClients();
   }, []);
+
+  const totalBilledByClient = useMemo(
+    () =>
+      invoices.reduce((totals, invoice) => {
+        if (!invoice.client_id) {
+          return totals;
+        }
+
+        const currentTotal = totals[invoice.client_id] || 0;
+        totals[invoice.client_id] = currentTotal + Number(invoice.total_amount || 0);
+        return totals;
+      }, {}),
+    [invoices],
+  );
 
   const handleSaveClient = async (clientData) => {
     setIsSaving(true);
@@ -142,6 +163,7 @@ function Clients() {
                 <tbody className="divide-y divide-slate-200">
                   {clients.map((client) => {
                     const planPrice = formatCurrency(client.plan_price);
+                    const totalBilled = formatCurrency(totalBilledByClient[client.id] || 0);
                     const pendingAmount = 'Rs. 0';
 
                     return (
@@ -187,7 +209,7 @@ function Clients() {
                           </div>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900">
-                          Rs. 0
+                          {totalBilled}
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-sm">
                           <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">

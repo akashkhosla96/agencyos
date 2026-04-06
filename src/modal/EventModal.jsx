@@ -138,6 +138,7 @@ function EventModal({
                 value={formData.client_id}
                 onChange={handleChange}
                 options={clients}
+                placeholder="No client selected"
               />
               <FormField
                 label="Date"
@@ -200,7 +201,7 @@ function EventModal({
             </button>
             <button
               type="submit"
-              disabled={isSaving || !formData.client_id}
+              disabled={isSaving}
               className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSaving ? 'Saving...' : initialEvent ? 'Update Event' : 'Save Event'}
@@ -240,7 +241,7 @@ function FormField({
   );
 }
 
-function SelectField({ label, name, value, onChange, options }) {
+function SelectField({ label, name, value, onChange, options, placeholder = 'Select an option' }) {
   return (
     <div>
       <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor={name}>
@@ -253,9 +254,7 @@ function SelectField({ label, name, value, onChange, options }) {
         onChange={onChange}
         className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-100"
       >
-        {options.length === 0 ? (
-          <option value="">No clients available</option>
-        ) : null}
+        <option value="">{options.length === 0 ? 'No clients available' : placeholder}</option>
         {options.map((option) => (
           <option key={option.id} value={option.id}>
             {option.brand_name}
@@ -269,7 +268,7 @@ function SelectField({ label, name, value, onChange, options }) {
 function createInitialFormData(defaultDate, clients = []) {
   return {
     title: '',
-    client_id: clients[0]?.id || '',
+    client_id: '',
     date: defaultDate,
     time: '10:00',
     type: 'Shoot',
@@ -280,7 +279,7 @@ function createInitialFormData(defaultDate, clients = []) {
 function createFormDataFromEvent(event) {
   return {
     title: event.title,
-    client_id: event.client_id,
+    client_id: event.client_id || '',
     date: event.date,
     time: event.time,
     type: event.type,

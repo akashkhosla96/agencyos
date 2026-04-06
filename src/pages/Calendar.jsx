@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { EllipsisVertical, Plus, Trash2, Pencil } from 'lucide-react';
 import EventModal from '../modal/EventModal';
 import { supabase } from '../services/supabaseClient';
 
@@ -15,6 +15,8 @@ function Calendar() {
   const [clients, setClients] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [deletingEventId, setDeletingEventId] = useState(null);
+  const [openActionMenuId, setOpenActionMenuId] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -50,6 +52,18 @@ function Calendar() {
     fetchCalendarData();
   }, []);
 
+  useEffect(() => {
+    const handleWindowClick = () => {
+      setOpenActionMenuId(null);
+    };
+
+    window.addEventListener('click', handleWindowClick);
+
+    return () => {
+      window.removeEventListener('click', handleWindowClick);
+    };
+  }, []);
+
   const clientsById = useMemo(
     () =>
       clients.reduce((lookup, client) => {
@@ -63,7 +77,7 @@ function Calendar() {
     () =>
       events.map((event) => ({
         ...event,
-        clientName: clientsById[event.client_id] || 'Unknown client',
+        clientName: clientsById[event.client_id] || 'No client linked',
       })),
     [events, clientsById],
   );
@@ -81,7 +95,7 @@ function Calendar() {
 
     const payload = {
       title: eventData.title.trim(),
-      client_id: eventData.client_id,
+      client_id: eventData.client_id || null,
       date: eventData.date,
       time: eventData.time,
       type: eventData.type,
@@ -139,6 +153,32 @@ function Calendar() {
   const handleEditEvent = (event) => {
     setEditingEvent(event);
     setIsModalOpen(true);
+  };
+
+  const handleDeleteEvent = async (eventId) => {
+    setDeletingEventId(eventId);
+    setOpenActionMenuId(null);
+    setError('');
+
+    try {
+      const { error: deleteError } = await supabase.from('events').delete().eq('id', eventId);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      setEvents((currentEvents) => currentEvents.filter((event) => event.id !== eventId));
+
+      if (editingEvent?.id === eventId) {
+        setEditingEvent(null);
+        setIsModalOpen(false);
+      }
+    } catch (deleteError) {
+      console.error('Error deleting event:', deleteError);
+      setError('Unable to delete event right now.');
+    } finally {
+      setDeletingEventId(null);
+    }
   };
 
   const handleCloseModal = () => {
@@ -297,14 +337,14 @@ function Calendar() {
                     key={event.id}
                     className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900">
                           {formatTime(event.time)} - {event.title}
                         </p>
                         <p className="mt-1 text-sm text-slate-500">{event.clientName}</p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-1.5">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-medium ${getTypeBadgeClass(
                             event.type,
@@ -312,13 +352,54 @@ function Calendar() {
                         >
                           {event.type}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => handleEditEvent(event)}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-                        >
-                          Edit
-                        </button>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={(clickEvent) => {
+                              clickEvent.stopPropagation();
+                              setOpenActionMenuId((currentId) =>
+                                currentId === event.id ? null : event.id,
+                              );
+                            }}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                            aria-label={`Open actions for ${event.title}`}
+                            aria-expanded={openActionMenuId === event.id}
+                          >
+                            <EllipsisVertical className="h-4 w-4" />
+                          </button>
+
+                          {openActionMenuId === event.id ? (
+                            <div
+                              className="absolute right-0 top-11 z-10 min-w-[140px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg shadow-slate-200/70"
+                              onClick={(clickEvent) => clickEvent.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionMenuId(null);
+                                  handleEditEvent(event);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+                              >
+                                <Pencil className="h-4 w-4" />
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteEvent(event.id)}
+                                disabled={deletingEventId === event.id}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {deletingEventId === event.id ? (
+                                  <span className="h-4 w-4 rounded-full border-2 border-rose-200 border-t-rose-600 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                                {deletingEventId === event.id ? 'Deleting...' : 'Delete'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                     {event.notes ? (
