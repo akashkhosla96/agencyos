@@ -7,6 +7,7 @@ function Clients() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [clients, setClients] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [receipts, setReceipts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -17,11 +18,15 @@ function Clients() {
       setError('');
 
       try {
-        const [{ data: clientsData, error: clientsError }, { data: invoicesData, error: invoicesError }] =
-          await Promise.all([
-            supabase.from('client_table').select('*').order('created_at', { ascending: false }),
-            supabase.from('invoices').select('client_id, total_amount'),
-          ]);
+        const [
+          { data: clientsData, error: clientsError },
+          { data: invoicesData, error: invoicesError },
+          { data: receiptsData, error: receiptsError },
+        ] = await Promise.all([
+          supabase.from('client_table').select('*').order('created_at', { ascending: false }),
+          supabase.from('invoices').select('client_id, total_amount'),
+          supabase.from('receipts').select('client_id, amount'),
+        ]);
 
         if (clientsError) {
           throw clientsError;
@@ -31,11 +36,16 @@ function Clients() {
           throw invoicesError;
         }
 
+        if (receiptsError) {
+          throw receiptsError;
+        }
+
         setClients(clientsData || []);
         setInvoices(invoicesData || []);
+        setReceipts(receiptsData || []);
       } catch (fetchError) {
         console.error('Error fetching clients:', fetchError);
-        setError('Unable to load clients right now.');
+        setError(getSupabaseErrorMessage(fetchError, 'Unable to load clients right now.'));
       } finally {
         setIsLoading(false);
       }
@@ -56,6 +66,20 @@ function Clients() {
         return totals;
       }, {}),
     [invoices],
+  );
+
+  const totalReceivedByClient = useMemo(
+    () =>
+      receipts.reduce((totals, receipt) => {
+        if (!receipt.client_id) {
+          return totals;
+        }
+
+        const currentTotal = totals[receipt.client_id] || 0;
+        totals[receipt.client_id] = currentTotal + Number(receipt.amount || 0);
+        return totals;
+      }, {}),
+    [receipts],
   );
 
   const handleSaveClient = async (clientData) => {
@@ -141,9 +165,7 @@ function Clients() {
                 <thead className="bg-slate-50/50">
                   <tr>
                     {[
-                      'Name',
-                      'Brand',
-                      'Phone',
+                      'Client',
                       'Plan',
                       'Price',
                       'Services',
@@ -163,26 +185,29 @@ function Clients() {
                 <tbody className="divide-y divide-slate-200">
                   {clients.map((client) => {
                     const planPrice = formatCurrency(client.plan_price);
-                    const totalBilled = formatCurrency(totalBilledByClient[client.id] || 0);
-                    const pendingAmount = 'Rs. 0';
+                    const totalBilledValue = totalBilledByClient[client.id] || 0;
+                    const totalReceivedValue = totalReceivedByClient[client.id] || 0;
+                    const pendingAmountValue = Math.max(totalBilledValue - totalReceivedValue, 0);
+                    const totalBilled = formatCurrency(totalBilledValue);
+                    const pendingAmount = formatCurrency(pendingAmountValue);
 
                     return (
                       <tr key={client.id} className="transition-colors hover:bg-slate-50/80">
-                        <td className="whitespace-nowrap px-6 py-4">
+                        <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
                               {getInitials(client.name)}
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <p className="text-sm font-medium text-slate-900">{client.name}</p>
+                              <p className="mt-0.5 break-words text-xs text-slate-500">
+                                {client.brand_name}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-400">
+                                {client.phone || '-'}
+                              </p>
                             </div>
                           </div>
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
-                          {client.brand_name}
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
-                          {client.phone || '-'}
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
                           <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
@@ -212,7 +237,13 @@ function Clients() {
                           {totalBilled}
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-sm">
-                          <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                          <span
+                            className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${
+                              pendingAmountValue > 0
+                                ? 'bg-amber-50 text-amber-700 ring-amber-600/20'
+                                : 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
+                            }`}
+                          >
                             {pendingAmount}
                           </span>
                         </td>
