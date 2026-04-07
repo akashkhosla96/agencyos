@@ -75,7 +75,7 @@ function ClientDetail() {
   const upcomingEvents = useMemo(() => {
     const today = getTodayString();
 
-    return events.filter((event) => event.date >= today);
+    return events.filter((event) => event.date >= today && event.status === 'PENDING');
   }, [events]);
 
   const ledgerEntries = useMemo(() => {

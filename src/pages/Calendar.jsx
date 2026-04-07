@@ -82,8 +82,13 @@ function Calendar() {
     [events, clientsById],
   );
 
+  const pendingEvents = useMemo(
+    () => eventsWithClientNames.filter((event) => event.status === 'PENDING'),
+    [eventsWithClientNames],
+  );
+
   const monthDays = useMemo(() => buildCalendarDays(currentMonth), [currentMonth]);
-  const eventsByDate = useMemo(() => groupEventsByDate(eventsWithClientNames), [eventsWithClientNames]);
+  const eventsByDate = useMemo(() => groupEventsByDate(pendingEvents), [pendingEvents]);
 
   const selectedDateEvents = [...(eventsByDate[selectedDate] || [])].sort((a, b) =>
     a.time.localeCompare(b.time),
@@ -100,6 +105,7 @@ function Calendar() {
       time: eventData.time,
       type: eventData.type,
       notes: eventData.notes.trim(),
+      status: editingEvent ? editingEvent.status : 'PENDING',
     };
 
     try {
@@ -178,6 +184,31 @@ function Calendar() {
       setError('Unable to delete event right now.');
     } finally {
       setDeletingEventId(null);
+    }
+  };
+
+  const handleMarkCompleted = async (eventId) => {
+    setOpenActionMenuId(null);
+    setError('');
+
+    try {
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({ status: 'COMPLETED' })
+        .eq('id', eventId)
+        .select()
+        .single();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setEvents((currentEvents) =>
+        currentEvents.filter((event) => event.id !== eventId),
+      );
+    } catch (updateError) {
+      console.error('Error updating event status:', updateError);
+      setError('Unable to mark event as completed right now.');
     }
   };
 
@@ -383,6 +414,14 @@ function Calendar() {
                               >
                                 <Pencil className="h-4 w-4" />
                                 Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleMarkCompleted(event.id)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-emerald-600 transition hover:bg-emerald-50"
+                              >
+                                <span className="h-4 w-4">✓</span>
+                                Completed
                               </button>
                               <button
                                 type="button"
