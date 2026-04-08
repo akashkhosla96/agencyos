@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
+import { Eye, Pencil, Printer, Trash } from 'lucide-react';
 import AddReceiptModal from '../modal/AddReceiptModal';
 import { supabase } from '../services/supabaseClient';
 import { getTotalReceivedByClient } from '../utils/receipts';
@@ -10,6 +11,8 @@ function Receipts() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingReceipt, setEditingReceipt] = useState(null);
+  const [isViewing, setIsViewing] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -97,18 +100,35 @@ function Receipts() {
     };
 
     try {
-      const { data, error: insertError } = await supabase
-        .from('receipts')
-        .insert([payload])
-        .select()
-        .single();
+      if (receiptData.id) {
+        const { data, error: updateError } = await supabase
+          .from('receipts')
+          .update(payload)
+          .eq('id', receiptData.id)
+          .select()
+          .single();
 
-      if (insertError) {
-        throw insertError;
+        if (updateError) {
+          throw updateError;
+        }
+
+        setReceipts((current) => current.map((r) => (r.id === data.id ? data : r)));
+      } else {
+        const { data, error: insertError } = await supabase
+          .from('receipts')
+          .insert([payload])
+          .select()
+          .single();
+
+        if (insertError) {
+          throw insertError;
+        }
+
+        setReceipts((currentReceipts) => [data, ...currentReceipts]);
       }
 
-      setReceipts((currentReceipts) => [data, ...currentReceipts]);
       setIsModalOpen(false);
+      setEditingReceipt(null);
     } catch (saveError) {
       console.error('Error saving receipt:', saveError);
       const message = getSupabaseErrorMessage(saveError, 'Unable to save receipt right now.');
@@ -117,6 +137,52 @@ function Receipts() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleDeleteReceipt = async (id) => {
+    const confirm = window.confirm('Delete this receipt entry? This action cannot be undone.');
+    if (!confirm) return;
+
+    setIsSaving(true);
+    setError('');
+
+    try {
+      const { error: deleteError } = await supabase.from('receipts').delete().eq('id', id);
+      if (deleteError) throw deleteError;
+
+      setReceipts((current) => current.filter((r) => r.id !== id));
+    } catch (deleteErr) {
+      console.error('Error deleting receipt:', deleteErr);
+      setError(getSupabaseErrorMessage(deleteErr, 'Unable to delete receipt right now.'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePrintReceipt = (receipt) => {
+    const content = `
+      <html>
+        <head>
+          <title>Receipt</title>
+        </head>
+        <body>
+          <h2>Receipt</h2>
+          <p><strong>Date:</strong> ${formatDate(receipt.receipt_date)}</p>
+          <p><strong>Account:</strong> ${receipt.account || ''}</p>
+          <p><strong>Client:</strong> ${receipt.clientName || ''}</p>
+          <p><strong>Amount:</strong> ${formatCurrency(receipt.amount)}</p>
+          <p><strong>Mode:</strong> ${receipt.mode || ''}</p>
+          <p><strong>Notes:</strong> ${receipt.notes || ''}</p>
+        </body>
+      </html>
+    `;
+
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(content);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
   };
 
   return (
@@ -134,7 +200,11 @@ function Receipts() {
           <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
             <button
               type="button"
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => {
+                setEditingReceipt(null);
+                setIsViewing(false);
+                setIsModalOpen(true);
+              }}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
             >
               <Plus className="-ml-0.5 h-4 w-4" />
@@ -173,6 +243,12 @@ function Receipts() {
                         {heading}
                       </th>
                     ))}
+                    <th
+                      scope="col"
+                      className="px-6 py-3.5 text-right text-xs font-semibold text-slate-500"
+                    >
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -198,12 +274,59 @@ function Receipts() {
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {receipt.notes?.trim() ? receipt.notes : '-'}
                       </td>
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <div className="flex justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingReceipt(receipt);
+                              setIsViewing(true);
+                              setIsModalOpen(true);
+                            }}
+                            aria-label={`View receipt ${receipt.id}`}
+                            className="rounded-md text-slate-400 transition-colors hover:text-blue-600"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingReceipt(receipt);
+                              setIsViewing(false);
+                              setIsModalOpen(true);
+                            }}
+                            aria-label={`Edit receipt ${receipt.id}`}
+                            className="rounded-md text-slate-400 transition-colors hover:text-amber-600"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteReceipt(receipt.id)}
+                            aria-label={`Delete receipt ${receipt.id}`}
+                            className="rounded-md text-slate-400 transition-colors hover:text-rose-600"
+                          >
+                            <Trash className="h-4 w-4" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handlePrintReceipt(receipt)}
+                            aria-label={`Print receipt ${receipt.id}`}
+                            className="rounded-md text-slate-400 transition-colors hover:text-emerald-600"
+                          >
+                            <Printer className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
 
                   {receiptsWithClientNames.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">
+                      <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-500">
                         No receipts posted yet.
                       </td>
                     </tr>
@@ -217,8 +340,15 @@ function Receipts() {
 
       <AddReceiptModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        initialData={editingReceipt}
+        readOnly={isViewing}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingReceipt(null);
+          setIsViewing(false);
+        }}
         onSave={handleSaveReceipt}
+        onDelete={handleDeleteReceipt}
         clients={clients}
         isSaving={isSaving}
         error={error}

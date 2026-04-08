@@ -9,6 +9,9 @@ function AddReceiptModal({
   clients = [],
   isSaving = false,
   error = '',
+  initialData = null,
+  readOnly = false,
+  onDelete = null,
 }) {
   const [formData, setFormData] = useState(getInitialFormData);
   const [submitError, setSubmitError] = useState('');
@@ -47,7 +50,15 @@ function AddReceiptModal({
     if (!isOpen) {
       setFormData(getInitialFormData());
       setSubmitError('');
+      return;
     }
+
+    if (initialData) {
+      setFormData(mapInitialData(initialData));
+      return;
+    }
+
+    setFormData(getInitialFormData());
   }, [isOpen]);
 
   useEffect(() => {
@@ -72,6 +83,14 @@ function AddReceiptModal({
       clientId: clientId || '',
       account: selectedClient?.brand_name || currentData.account,
     }));
+  };
+
+  const handleDelete = async () => {
+    if (!initialData || !onDelete) return;
+    const confirmed = window.confirm('Delete this receipt entry? This action cannot be undone.');
+    if (!confirmed) return;
+    await onDelete(initialData.id);
+    onClose();
   };
 
   const handleSubmit = async (event) => {
@@ -121,7 +140,7 @@ function AddReceiptModal({
         <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
           <div>
             <h2 id="add-receipt-title" className="text-xl font-semibold text-slate-900">
-              Add Receipt Entry
+              {initialData ? 'Edit Receipt Entry' : 'Add Receipt Entry'}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
               Quick money-in posting with optional client tagging for ledger tracking.
@@ -170,6 +189,7 @@ function AddReceiptModal({
                   value={formData.mode}
                   onChange={handleChange}
                   className={inputClassName}
+                  disabled={readOnly}
                 >
                   {receiptModes.map((mode) => (
                     <option key={mode} value={mode}>
@@ -204,7 +224,8 @@ function AddReceiptModal({
                   name="account"
                   type="text"
                   value={formData.account}
-                  onChange={handleChange}
+                      onChange={handleChange}
+                      disabled={readOnly}
                   placeholder="Enter account or party name"
                   autoFocus
                   required
@@ -220,7 +241,8 @@ function AddReceiptModal({
                   min="0"
                   step="0.01"
                   value={formData.amount}
-                  onChange={handleChange}
+                      onChange={handleChange}
+                      disabled={readOnly}
                   placeholder="0.00"
                   required
                   className={inputClassName}
@@ -235,6 +257,7 @@ function AddReceiptModal({
                     rows="4"
                     value={formData.notes}
                     onChange={handleChange}
+                    disabled={readOnly}
                     placeholder="Optional narration or reference"
                     className={`${inputClassName} resize-none`}
                   />
@@ -249,27 +272,55 @@ function AddReceiptModal({
             ) : null}
           </div>
 
-          <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-between sm:px-6">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSaving}
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSaving ? 'Saving...' : 'Save Receipt'}
-            </button>
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-between sm:px-6">
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSaving}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Close
+              </button>
+
+              {readOnly && initialData ? (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={isSaving}
+                  className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              ) : null}
+            </div>
+
+            {!readOnly && (
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSaving ? (initialData ? 'Updating...' : 'Saving...') : initialData ? 'Update Receipt' : 'Save Receipt'}
+              </button>
+            )}
           </div>
         </form>
       </div>
     </div>
   );
+}
+
+function mapInitialData(d) {
+  return {
+    id: d.id,
+    receiptDate: d.receipt_date ? String(d.receipt_date).slice(0, 10) : getTodayDate(),
+    clientId: d.client_id || '',
+    account: d.account || '',
+    amount: d.amount ?? '',
+    mode: d.mode || 'Cash',
+    notes: d.notes || '',
+  };
 }
 
 function Field({ label, htmlFor, children }) {

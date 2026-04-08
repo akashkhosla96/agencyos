@@ -17,6 +17,7 @@ function Calendar() {
   const [isSaving, setIsSaving] = useState(false);
   const [deletingEventId, setDeletingEventId] = useState(null);
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
+  const [filter, setFilter] = useState('ALL');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -39,8 +40,16 @@ function Calendar() {
           throw clientsError;
         }
 
-        setEvents(eventsData || []);
+        const allEvents = eventsData || [];
+        setEvents(allEvents);
         setClients(clientsData || []);
+
+        // After fetching, update any missed events on the server and locally
+        try {
+          await updateMissedEvents(allEvents);
+        } catch (missedErr) {
+          console.error('Error updating missed events:', missedErr);
+        }
       } catch (fetchError) {
         console.error('Error fetching calendar data:', fetchError);
         setError('Unable to load calendar data right now.');
@@ -51,6 +60,48 @@ function Calendar() {
 
     fetchCalendarData();
   }, []);
+
+  async function updateMissedEvents(eventsArray) {
+    if (!Array.isArray(eventsArray) || eventsArray.length === 0) return;
+
+    const now = new Date();
+
+    const missedEvents = eventsArray.filter((event) => {
+      try {
+        if (String(event.status || '').toUpperCase() !== 'PENDING') return false;
+        const eventDateTime = new Date(`${event.date}T${event.time || '00:00:00'}`);
+        return eventDateTime < now;
+      } catch (e) {
+        return false;
+      }
+    });
+
+    if (missedEvents.length === 0) return;
+
+    // Update each missed event on the server and update local state
+    for (const missed of missedEvents) {
+      try {
+        const { error: updateError } = await supabase
+          .from('events')
+          .update({ status: 'MISSED' })
+          .eq('id', missed.id);
+
+        if (updateError) {
+          console.error('Failed to mark event missed for id', missed.id, updateError);
+          continue;
+        }
+      } catch (e) {
+        console.error('Error updating missed event', missed.id, e);
+      }
+    }
+
+    // Reflect changes locally
+    setEvents((current) =>
+      current.map((ev) =>
+        missedEvents.some((m) => m.id === ev.id) ? { ...ev, status: 'MISSED' } : ev,
+      ),
+    );
+  }
 
   useEffect(() => {
     const handleWindowClick = () => {
@@ -82,13 +133,14 @@ function Calendar() {
     [events, clientsById],
   );
 
-  const pendingEvents = useMemo(
-    () => eventsWithClientNames.filter((event) => event.status === 'PENDING'),
-    [eventsWithClientNames],
-  );
+  const filteredEvents = useMemo(() => {
+    if (filter === 'ALL') return eventsWithClientNames;
+    const desired = String(filter || '').toUpperCase();
+    return eventsWithClientNames.filter((event) => String(event.status || '').toUpperCase() === desired);
+  }, [eventsWithClientNames, filter]);
 
   const monthDays = useMemo(() => buildCalendarDays(currentMonth), [currentMonth]);
-  const eventsByDate = useMemo(() => groupEventsByDate(pendingEvents), [pendingEvents]);
+  const eventsByDate = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents]);
 
   const selectedDateEvents = [...(eventsByDate[selectedDate] || [])].sort((a, b) =>
     a.time.localeCompare(b.time),
@@ -258,6 +310,22 @@ function Calendar() {
                 <p className="mt-1 text-sm text-slate-500">
                   Click a date to review or schedule work.
                 </p>
+                <div className="mt-3 flex items-center gap-2">
+                  {['ALL', 'PENDING', 'COMPLETED', 'MISSED'].map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setFilter(f)}
+                      className={`rounded-xl px-3 py-1 text-sm font-medium transition focus:outline-none ${
+                        filter === f
+                          ? 'bg-cyan-600 text-white'
+                          : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {f[0] + f.slice(1).toLowerCase()}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -366,7 +434,9 @@ function Calendar() {
                 selectedDateEvents.map((event) => (
                   <article
                     key={event.id}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                    className={`rounded-2xl border border-slate-200 bg-slate-50 p-5 min-h-[72px] ${getStatusBorderClass(
+                      event.status,
+                    )}`}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
@@ -376,11 +446,7 @@ function Calendar() {
                         <p className="mt-1 text-sm text-slate-500">{event.clientName}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${getTypeBadgeClass(
-                            event.type,
-                          )}`}
-                        >
+                        <span className={`rounded-full px-3 py-1 text-xs font-medium ${getTypeBadgeClass(event.type)} ${getStatusBadgeClass(event.status)}`}>
                           {event.type}
                         </span>
                         <div className="relative">
@@ -575,6 +641,22 @@ function getTypeBadgeClass(type) {
   }
 
   return 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200';
+}
+
+function getStatusBorderClass(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'PENDING') return 'border-l-4 border-l-cyan-500';
+  if (s === 'COMPLETED') return 'border-l-4 border-l-emerald-500';
+  if (s === 'MISSED') return 'border-l-4 border-l-rose-500';
+  return '';
+}
+
+function getStatusBadgeClass(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'PENDING') return 'bg-cyan-50 text-cyan-700 ring-1 ring-inset ring-cyan-200';
+  if (s === 'COMPLETED') return 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200';
+  if (s === 'MISSED') return 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200';
+  return '';
 }
 
 export default Calendar;
