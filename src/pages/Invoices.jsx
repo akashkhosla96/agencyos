@@ -360,9 +360,7 @@ function Invoices() {
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-5">
             <h2 className="text-base font-semibold text-slate-900">Invoice Register</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              {invoices.length} invoice records across all clients
-            </p>
+
           </div>
 
           {error ? (

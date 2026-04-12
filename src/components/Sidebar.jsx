@@ -6,7 +6,7 @@ const navigationItems = [
   { label: 'Calendar', to: '/calendar' },
   { label: 'Invoices', to: '/invoices' },
   { label: 'Receipts', to: '/receipts' },
-  { label: 'Payments', to: '/payments' },
+  { label: 'Expenses', to: '/expenses' },
 ];
 
 const settingsItem = { label: 'Settings', to: '/settings' };

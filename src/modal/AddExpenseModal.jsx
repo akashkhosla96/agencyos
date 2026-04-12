@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-function AddPaymentModal({ isOpen, onClose, onSave, isSaving = false, error = '', initialData = null, readOnly = false, onDelete = null }) {
+function AddExpenseModal({ isOpen, onClose, onSave, isSaving = false, error = '', initialData = null, readOnly = false, onDelete = null }) {
   const [formData, setFormData] = useState(getInitialFormData);
   const [submitError, setSubmitError] = useState('');
 
@@ -32,8 +32,13 @@ function AddPaymentModal({ isOpen, onClose, onSave, isSaving = false, error = ''
     e.preventDefault();
     setSubmitError('');
 
-    if (!formData.account.trim()) {
-      setSubmitError('Account is required.');
+    if (!formData.expenseHead || !formData.expenseHead.trim()) {
+      setSubmitError('Expense Head is required.');
+      return;
+    }
+
+    if (!formData.expenseAccount || !formData.expenseAccount.trim()) {
+      setSubmitError('Expense Account is required.');
       return;
     }
 
@@ -45,7 +50,7 @@ function AddPaymentModal({ isOpen, onClose, onSave, isSaving = false, error = ''
     try {
       await onSave(formData);
     } catch (saveError) {
-      setSubmitError(saveError?.message || 'Unable to save payment right now.');
+      setSubmitError(saveError?.message || 'Unable to save expense right now.');
     }
   };
 
@@ -64,14 +69,14 @@ function AddPaymentModal({ isOpen, onClose, onSave, isSaving = false, error = ''
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="add-payment-title"
+        aria-labelledby="add-expense-title"
       >
           <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
           <div>
-            <h2 id="add-payment-title" className="text-xl font-semibold text-slate-900">
-              {initialData ? (readOnly ? 'View Payment' : 'Edit Payment') : 'Add Payment'}
+            <h2 id="add-expense-title" className="text-xl font-semibold text-slate-900">
+              {initialData ? (readOnly ? 'View Expense' : 'Edit Expense') : 'Add Expense'}
             </h2>
-            <p className="mt-1 text-sm text-slate-500">Record an outgoing payment.</p>
+            <p className="mt-1 text-sm text-slate-500">Record an outgoing expense.</p>
           </div>
 
           <button
@@ -90,8 +95,8 @@ function AddPaymentModal({ isOpen, onClose, onSave, isSaving = false, error = ''
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Payment Date" htmlFor="paymentDate">
-                <input id="paymentDate" name="paymentDate" type="date" value={formData.paymentDate} onChange={handleChange} required className={inputClassName} disabled={readOnly} />
+              <Field label="Expense Date" htmlFor="expenseDate">
+                <input id="expenseDate" name="expenseDate" type="date" value={formData.expenseDate} onChange={handleChange} required className={inputClassName} disabled={readOnly} />
               </Field>
 
               <Field label="Mode" htmlFor="mode">
@@ -102,8 +107,12 @@ function AddPaymentModal({ isOpen, onClose, onSave, isSaving = false, error = ''
                 </select>
               </Field>
 
-              <Field label="Account" htmlFor="account">
-                <input id="account" name="account" type="text" value={formData.account} onChange={handleChange} placeholder="Office Rent, Salary, etc." autoFocus required className={inputClassName} disabled={readOnly} />
+              <Field label="Expense Head" htmlFor="expenseHead">
+                <input id="expenseHead" name="expenseHead" type="text" value={formData.expenseHead} onChange={handleChange} placeholder="Salary, Rent, Supplies, etc." required className={inputClassName} disabled={readOnly} />
+              </Field>
+
+              <Field label="Expense Account" htmlFor="expenseAccount">
+                <input id="expenseAccount" name="expenseAccount" type="text" value={formData.expenseAccount} onChange={handleChange} placeholder="Bank A/c / Cash" required className={inputClassName} disabled={readOnly} />
               </Field>
 
               <Field label="Amount" htmlFor="amount">
@@ -128,7 +137,7 @@ function AddPaymentModal({ isOpen, onClose, onSave, isSaving = false, error = ''
                   type="button"
                   onClick={async () => {
                     if (!initialData || !onDelete) return;
-                    const confirmed = window.confirm('Delete this payment entry? This action cannot be undone.');
+                    const confirmed = window.confirm('Delete this expense entry? This action cannot be undone.');
                     if (!confirmed) return;
                     await onDelete(initialData.id);
                     onClose();
@@ -142,7 +151,7 @@ function AddPaymentModal({ isOpen, onClose, onSave, isSaving = false, error = ''
             </div>
 
             {!readOnly && (
-              <button type="submit" disabled={isSaving} className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? 'Saving...' : 'Save Payment'}</button>
+              <button type="submit" disabled={isSaving} className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? 'Saving...' : 'Save Expense'}</button>
             )}
           </div>
         </form>
@@ -154,8 +163,9 @@ function AddPaymentModal({ isOpen, onClose, onSave, isSaving = false, error = ''
 function mapInitialData(d) {
   return {
     id: d.id,
-    paymentDate: d.payment_date ? String(d.payment_date).slice(0, 10) : getTodayDate(),
-    account: d.account || '',
+    expenseDate: d.expense_date ? String(d.expense_date).slice(0, 10) : getTodayDate(),
+    expenseHead: d.expense_head || '',
+    expenseAccount: d.account || '',
     amount: d.amount ?? '',
     mode: d.mode || 'Cash',
     notes: d.notes || '',
@@ -177,8 +187,9 @@ function getTodayDate() {
 
 function getInitialFormData() {
   return {
-    paymentDate: getTodayDate(),
-    account: '',
+    expenseDate: getTodayDate(),
+    expenseHead: '',
+    expenseAccount: '',
     amount: '',
     mode: 'Cash',
     notes: '',
@@ -188,4 +199,4 @@ function getInitialFormData() {
 const inputClassName =
   'w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-100';
 
-export default AddPaymentModal;
+export default AddExpenseModal;

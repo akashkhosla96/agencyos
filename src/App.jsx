@@ -6,7 +6,7 @@ import ClientDetail from './pages/ClientDetail';
 import Dashboard from './pages/Dashboard';
 import Invoices from './pages/Invoices';
 import Receipts from './pages/Receipts';
-import Payments from './pages/Payments';
+import Expenses from './pages/Expenses';
 import Settings from './pages/Settings';
 
 function App() {
@@ -18,7 +18,7 @@ function App() {
         <Route path="clients/:clientId" element={<ClientDetail />} />
         <Route path="calendar" element={<Calendar />} />
         <Route path="invoices" element={<Invoices />} />
-        <Route path="payments" element={<Payments />} />
+        <Route path="expenses" element={<Expenses />} />
         <Route path="receipts" element={<Receipts />} />
         <Route path="settings" element={<Settings />} />
       </Route>
