@@ -19,7 +19,7 @@ function Sidebar() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
             Agency os
           </p>
-          <h1 className="mt-1 text-base font-semibold text-slate-900">Operations Hub</h1>
+          <h1 className="mt-1 text-base font-semibold text-slate-900">HESH MEDIA</h1>
         </div>
       </div>
 
