@@ -1,8 +1,7 @@
 const COMPANY_DETAILS = {
-  name: 'KHOSLA & CO.',
-  address: 'MAJITHA ROAD, AMRITSAR, PUNJAB',
+  name: 'HESH MEDIA',
+  address: 'Prem Complex, Circular Rd, Medical Enclave, Amritsar, Punjab 143001',
   phone: '7888338037',
-  placeOfSupply: 'PUNJAB',
   bankName: 'HDFC BANK',
   accountNumber: '9876543210',
   branchAndIfsc: 'ASR, HDFC12345',
@@ -63,39 +62,36 @@ export function printInvoiceDocument({ invoice, client, items = [] }) {
 
 function getInvoicePrintHtml({ invoice, client, items }) {
   const taxableAmount = Number(invoice.total_amount || 0);
-  const totalTax = 0;
-  const grandTotal = taxableAmount + totalTax;
+  const grandTotal = taxableAmount;
 
   const billedToName = client?.brand_name || invoice.clientName || 'Unknown client';
   const billedToAddress = client?.location || 'Address Not Provided';
-  const placeOfSupply = client?.location || COMPANY_DETAILS.placeOfSupply;
   const amountInWords = convertNumberToWords(grandTotal);
 
   const itemRows = items.length
     ? items
         .map(
           (item, index) => `
-            <tr>
-              <td class="col-serial">${index + 1}</td>
-              <td class="col-description">
-                <div class="item-name">${escapeHtml(item.service_name || '-')}</div>
-                ${
-                  item.description
-                    ? `<div class="item-description">${escapeHtml(item.description)}</div>`
-                    : ''
-                }
-              </td>
-              <td class="col-qty">${escapeHtml(String(item.quantity || 0))}</td>
-              <td class="col-unit">Set</td>
-              <td class="col-rate">${escapeHtml(formatCurrency(item.unit_price))}</td>
-              <td class="col-amount">${escapeHtml(formatCurrency(item.total))}</td>
-            </tr>
+              <tr>
+                <td class="col-serial">${index + 1}</td>
+                <td class="col-description">
+                  <div class="item-name">${escapeHtml(item.service_name || '-')}</div>
+                  ${
+                    item.description
+                      ? `<div class="item-description">${escapeHtml(item.description)}</div>`
+                      : ''
+                  }
+                </td>
+                <td class="col-qty">${escapeHtml(String(item.quantity || 0))}</td>
+                <td class="col-rate">${escapeHtml(formatCurrency(item.unit_price))}</td>
+                <td class="col-amount">${escapeHtml(formatCurrency(item.total))}</td>
+              </tr>
           `,
         )
         .join('')
     : `
       <tr>
-        <td class="empty-state" colspan="6">No invoice items available.</td>
+        <td class="empty-state" colspan="5">No invoice items available.</td>
       </tr>
     `;
 
@@ -220,8 +216,7 @@ function getInvoicePrintHtml({ invoice, client, items }) {
           }
 
           .col-serial,
-          .col-qty,
-          .col-unit {
+          .col-qty {
             width: 8%;
             text-align: center;
           }
@@ -234,7 +229,7 @@ function getInvoicePrintHtml({ invoice, client, items }) {
           }
 
           .col-description {
-            width: 46%;
+            width: 52%;
           }
 
           .item-name {
@@ -370,7 +365,6 @@ function getInvoicePrintHtml({ invoice, client, items }) {
               <div class="invoice-meta">
                 <div><strong>Invoice No:</strong> ${escapeHtml(invoice.invoice_number)}</div>
                 <div><strong>Date:</strong> ${escapeHtml(formatDateForPrint(invoice.issue_date))}</div>
-                <div><strong>Place of Supply:</strong> ${escapeHtml(placeOfSupply)}</div>
               </div>
             </div>
           </section>
@@ -389,12 +383,11 @@ function getInvoicePrintHtml({ invoice, client, items }) {
                 <th class="col-serial">#</th>
                 <th class="col-description">Item Description</th>
                 <th class="col-qty">Qty</th>
-                <th class="col-unit">Unit</th>
                 <th class="col-rate">Rate (&#8377;)</th>
                 <th class="col-amount">Amount (&#8377;)</th>
               </tr>
             </thead>
-            <tbody>${itemRows}</tbody>
+                <tbody>${itemRows}</tbody>
           </table>
 
           <div class="content-spacer"></div>
@@ -420,18 +413,14 @@ function getInvoicePrintHtml({ invoice, client, items }) {
             <div>
               <table class="totals-table">
                 <tbody>
-                  <tr>
-                    <td>Taxable Amount</td>
-                    <td>${escapeHtml(formatCurrency(taxableAmount))}</td>
-                  </tr>
-                  <tr>
-                    <td>Total Tax (0%)</td>
-                    <td>${escapeHtml(formatCurrency(totalTax))}</td>
-                  </tr>
-                  <tr class="grand-total">
-                    <td>Grand Total</td>
-                    <td>${escapeHtml(formatCurrency(grandTotal))}</td>
-                  </tr>
+                      <tr>
+                        <td>Taxable Amount</td>
+                        <td>${escapeHtml(formatCurrency(taxableAmount))}</td>
+                      </tr>
+                      <tr class="grand-total">
+                        <td>Grand Total</td>
+                        <td>${escapeHtml(formatCurrency(grandTotal))}</td>
+                      </tr>
                 </tbody>
               </table>
             </div>
