@@ -341,9 +341,7 @@ function Invoices() {
         <div className="sm:flex sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">Invoices</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Create, issue, and track invoices from your configured billing series.
-            </p>
+           
           </div>
           <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
             <button

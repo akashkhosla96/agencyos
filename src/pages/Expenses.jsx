@@ -136,8 +136,7 @@ function Expenses() {
       <div className="space-y-8">
         <div className="sm:flex sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Money Out (Expenses)</h1>
-            <p className="mt-1 text-sm text-slate-500">Record outgoing expenses quickly with simple tagging.</p>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Expenses</h1>
           </div>
           <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
             <button

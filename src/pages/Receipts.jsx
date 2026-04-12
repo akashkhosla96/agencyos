@@ -191,11 +191,8 @@ function Receipts() {
         <div className="sm:flex sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-              Money In (Receipts)
+              Receipts
             </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Record incoming payments quickly with optional client tagging for ledger tracking.
-            </p>
           </div>
           <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
             <button
